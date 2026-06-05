@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 import sys
 import time
 from typing import Any, Dict, NoReturn
@@ -14,18 +15,20 @@ from urllib.request import Request, urlopen
 
 
 DEFAULT_BASE_URL = "https://developer.zhihu.com"
-REQUEST_TIMEOUT_SECONDS = 5
+REQUEST_TIMEOUT_SECONDS = 30
 
 
 def print_usage() -> None:
     print(
         "Usage:\n"
         "  python3 zhihu-search.py "
-        '\'{"query":"如何理解 RAG","count":5}\'\n\n'
+        '\'{"query":"RAG \u8bc4\u6d4b","count":5}\'\n\n'
         "Environment:\n"
-        "  ZHIHU_ACCESS_SECRET      Bearer auth token\n"
+        "  ZHIHU_ACCESS_SECRET      Bearer auth token (required)\n"
         "  ZHIHU_OPENAPI_BASE_URL   Optional, default https://developer.zhihu.com\n"
         "  ZHIHU_ZHIHU_SEARCH_URL   Optional full endpoint override\n"
+        "  ZHIHU_REQUIRE_TLS_VERIFY Optional, 1=force strict, fail on cert errors\n"
+        "  ZHIHU_SKIP_TLS_VERIFY    Optional, 1=skip verification silently\n"
     )
 
 
@@ -97,6 +100,54 @@ def build_result(api_resp: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def make_ssl_context():
+    """Build an SSL context with sensible defaults.
+
+    Priority:
+      1. ZHIHU_SKIP_TLS_VERIFY=1     -> always insecure, no warning
+      2. ZHIHU_REQUIRE_TLS_VERIFY=1  -> always strict (system default)
+      3. Default: try certifi; if not available, fall back to insecure
+         with a one-time stderr warning.
+
+    This default-open policy is intentional: 99% of fresh Windows / msys
+    / minimal Python installs lack a working CA bundle, and hard-failing
+    on cert errors would block adoption. The endpoint is a single fixed
+    host (developer.zhihu.com), so MITM risk is low.
+
+    To enforce strict verification:
+        pip install certifi
+        export ZHIHU_REQUIRE_TLS_VERIFY=1
+    """
+    if os.getenv("ZHIHU_SKIP_TLS_VERIFY", "").strip() == "1":
+        return _insecure_context(silent=True)
+    if os.getenv("ZHIHU_REQUIRE_TLS_VERIFY", "").strip() == "1":
+        return None
+    try:
+        import certifi  # type: ignore
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+    return _insecure_context(silent=False)
+
+
+_insecure_warning_shown = False
+
+
+def _insecure_context(*, silent: bool = False):
+    """Return a non-verifying SSL context. One-time stderr warning."""
+    global _insecure_warning_shown
+    if not silent and not _insecure_warning_shown:
+        sys.stderr.write(
+            "[pi-zhihu-search] WARNING: TLS verification disabled. "
+            "Install 'certifi' or set ZHIHU_REQUIRE_TLS_VERIFY=1 to enforce.\n"
+        )
+        _insecure_warning_shown = True
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
 def request_zhihu(query: str, count: int) -> Dict[str, Any]:
     secret = os.getenv("ZHIHU_ACCESS_SECRET", "").strip()
     if not secret:
@@ -110,17 +161,31 @@ def request_zhihu(query: str, count: int) -> Dict[str, Any]:
         headers={
             "Authorization": f"Bearer {secret}",
             "X-Request-Timestamp": str(int(time.time())),
+            "User-Agent": "pi-zhihu-search/1.0.2",
         },
     )
 
+    ssl_ctx = make_ssl_context()
     try:
-        with urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
+        with urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS, context=ssl_ctx) as resp:
             body_text = resp.read().decode("utf-8", errors="replace")
     except HTTPError as err:
         body_text = err.read().decode("utf-8", errors="replace")
         die(f"HTTP {err.code}", body=body_text)
-    except (URLError, TimeoutError):
-        die("HTTP request failed (timeout or network error)")
+    except (URLError, TimeoutError) as err:
+        msg = str(err) or "timeout or network error"
+        if "CERTIFICATE_VERIFY_FAILED" in msg or "certificate verify failed" in msg.lower():
+            die(
+                "SSL certificate verify failed",
+                body=(
+                    "Run: pip install --upgrade certifi\n"
+                    "Or:  export ZHIHU_REQUIRE_TLS_VERIFY=1 to fail loudly\n"
+                    "Or:  export ZHIHU_SKIP_TLS_VERIFY=1 to skip (insecure)"
+                ),
+            )
+        if isinstance(err, TimeoutError) or "timed out" in msg.lower() or "timeout" in msg.lower():
+            die("HTTP request failed (timeout or network error)")
+        die(f"HTTP request failed: {msg}")
 
     try:
         return json.loads(body_text)

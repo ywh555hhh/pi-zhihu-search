@@ -9,6 +9,21 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![pi-package](https://img.shields.io/badge/pi--package-%E2%9C%93-blue)](https://pi.dev/packages)
 
+## 🚀 三步开箱即用
+
+```bash
+# 1. 一行安装
+pi install npm:pi-zhihu-search
+
+# 2. 去 https://developer.zhihu.com 拿个 Access Secret，然后
+export ZHIHU_ACCESS_SECRET="你的token"
+
+# 3. 在 pi 里直接用
+/skill:zhihu-search RAG 评测方法
+```
+
+> 其它全部自动：SSL 证书、timeout、CLI 入口，**都不用管**。Windows 用户不用装 certifi，macOS/Linux 也不用动 OpenSSL。
+
 ## ✨ 功能
 
 | Skill | 说明 |
@@ -62,6 +77,10 @@ export ZHIHU_ACCESS_SECRET="your-access-secret-here"
 | `ZHIHU_ZHIDA_URL` | `${BASE}/v1/chat/completions` | 单独覆盖直答 endpoint |
 | `ZHIHU_GLOBAL_SEARCH_URL` | `${BASE}/api/v1/content/global_search` | 单独覆盖全网搜索 endpoint |
 | `ZHIHU_HOT_LIST_URL` | `${BASE}/api/v1/content/hot_list` | 单独覆盖热榜 endpoint |
+| `ZHIHU_REQUIRE_TLS_VERIFY` | `0` (auto) | 设为 `1` 强制严格证书验证，失败时直接报错 |
+| `ZHIHU_SKIP_TLS_VERIFY` | `0` (auto) | 设为 `1` 跳过证书验证（不推荐） |
+
+> **关于 SSL/TLS**：默认会自动尝试 `certifi`，没装时静默降级到宽松模式并打印一条 stderr 警告。普通用户**完全不用管**这个。
 
 ## 🚀 使用
 
@@ -196,6 +215,14 @@ Access Secret 无效或过期。回 [知乎开放平台](https://developer.zhihu
 <summary>想用流式输出 zhida？</summary>
 
 当前版本只支持非流式。流式支持会随官方 API 一起来，下个版本会加。
+</details>
+
+<details>
+<summary>看到 stderr 警告 <code>TLS verification disabled</code> 怎么办？</summary>
+
+这是默认行为，不影响使用。如果你想消除警告：<br>
+<code>pip install certifi</code>（推荐，会自动启用严格验证）<br>
+或者：<code>export ZHIHU_REQUIRE_TLS_VERIFY=1</code>（保留严格验证，失败时报错）
 </details>
 
 ## 🗂️ 项目结构

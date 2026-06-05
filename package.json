@@ -1,6 +1,6 @@
 {
   "name": "pi-zhihu-search",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "知乎开放平台搜索能力 pi skill 合集：知乎站内搜索、直答、全网搜索、热榜 — 四合一，开箱即用",
   "keywords": [
     "pi-package",
@@ -32,9 +32,6 @@
   },
   "homepage": "https://github.com/ywh555hhh/pi-zhihu-search#readme",
   "pi": {
-    "skills": [
-      "./skills"
-    ]
-  },
-  "changelog": "Fix Windows SSL cert verification and increase request timeout (5s -> 30s, zhida 120s -> 60s)"
+    "skills": ["./skills"]
+  }
 }
